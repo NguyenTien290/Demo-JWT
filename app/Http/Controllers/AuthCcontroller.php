@@ -82,25 +82,36 @@ class AuthCcontroller extends Controller
 
     public function refresh(Request $request)
     {
-        $refreshToken = $request->rerefreshToken;
+        $refreshToken = $request->refreshToken;
 
+
+        if (!$refreshToken) {
+            return response()->json([
+                'message' => 'Chưa Refresh token',
+            ], 400);
+        }
 
         try {
             $payload = $this->decodeJwtToken($refreshToken);
-            if (time() >= $refreshToken->exp) {
+            if (time() >= $payload->exp) {
                 return response()->json(
-                    ['message' => 'Không bỏ refresh token'],
+                    ['message' => 'Refresh Token của bạn đã quá hạn'],
                     400
                 );
             }
-        } catch (\Throwable $th) {
-            //throw $th;
-        }
-        if (!$refreshToken) {
-            return response()->json(
-                ['message' => 'Không bỏ refresh token'],
-                400
-            );
+
+            // Tạo Payload mới cho Access Token
+            $payload = [
+                'sub' => $payload->sub,
+                'iat' => time(),
+                'exp' => time() + 600, // Tồn tại 1h
+            ];
+
+            $newAccessToken = $this->createJwtToken($payload);
+
+            return response()->json(['access_token' => $newAccessToken]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Invalid refresh token', 'error' => $e->getMessage()], 401);
         }
     }
 
