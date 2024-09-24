@@ -73,45 +73,88 @@ class AuthCcontroller extends Controller
         ], 201);
     }
 
-    public function logout()
+    public function logout(Request $request)
     {
-        auth()->logout();
+        $token = $request->bearerToken();
 
-        return response()->json(['message' => 'User successfully signed out']);
+        try {
+            $expriredAt = now()->addMinutes(300);
+
+            cache([$token => true], $expriredAt);
+
+            return response()->json(['message' => 'User successfully signed out']);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Invalid Access token', 'error' => $e->getMessage()], 401);
+        }
+
+      
     }
 
     public function refresh(Request $request)
     {
-        $refreshToken = $request->refreshToken;
 
-
-        if (!$refreshToken) {
-            return response()->json([
-                'message' => 'Chưa Refresh token',
-            ], 400);
-        }
+        // Kiểm tra có Access Token chưa ?
+        $accessToken = $request->bearerToken();
 
         try {
-            $payload = $this->decodeJwtToken($refreshToken);
-            if (time() >= $payload->exp) {
-                return response()->json(
-                    ['message' => 'Refresh Token của bạn đã quá hạn'],
-                    400
-                );
+
+            $subAccessToken = $this->decodeJwtToken($accessToken)->sub;
+
+            $refreshToken = $request->refreshToken;
+
+            // Kiểm tra có refresh token
+            if (!$refreshToken) {
+                return response()->json([
+                    'message' => 'Chưa Refresh token',
+                ], 400);
             }
 
-            // Tạo Payload mới cho Access Token
-            $payload = [
-                'sub' => $payload->sub,
-                'iat' => time(),
-                'exp' => time() + 600, // Tồn tại 1h
-            ];
+            try {
+                $payload = $this->decodeJwtToken($refreshToken);
+                $subRefreshToken = $payload->sub;
 
-            $newAccessToken = $this->createJwtToken($payload);
+                // Kiểm tra thông tin có khớp với email giữa access và refresh
+                if ($subAccessToken != $subRefreshToken) {
+                    return response()->json(
+                        ['message' => 'Refresh Token không đúng'],
+                        400
+                    );
+                }
 
-            return response()->json(['access_token' => $newAccessToken]);
+                if (time() >= $payload->exp) {
+                    return response()->json(
+                        ['message' => 'Refresh Token của bạn đã quá hạn'],
+                        400
+                    );
+                }
+
+                // Tạo Payload mới cho Access Token
+                $accessTokePayload = [
+                    'sub' => $subRefreshToken,
+                    'iat' => time(),
+                    'exp' => time() + 300, // Tồn tại 5'
+                ];
+                $newAccessToken = $this->createJwtToken($accessTokePayload);
+
+                // Tạo Refresh Token mới
+                $refreshTokenPayload = [
+                    'sub' => $subRefreshToken,
+                    'iat' => time(),
+                    'exp' => time() + 3600, // Tồn tại trong 1h
+                ];
+                $newRefreshToken = $this->createJwtToken($refreshTokenPayload);
+
+    
+                return response()->json([
+                    'access_token' => $newAccessToken,
+                    'refresh_token' => $newRefreshToken,
+
+                ]);
+            } catch (\Exception $e) {
+                return response()->json(['message' => 'Invalid refresh token', 'error' => $e->getMessage()], 401);
+            }
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Invalid refresh token', 'error' => $e->getMessage()], 401);
+            return response()->json(['message' => 'Invalid Access token', 'error' => $e->getMessage()], 401);
         }
     }
 
@@ -182,27 +225,5 @@ class AuthCcontroller extends Controller
             throw new \Exception('Invalid token signature');
         }
         return json_decode($payload);
-    }
-
-    public function changePassword(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'old_password' => 'required|string|min:6',
-            'new_password' => 'required|string|confirmed|min:6',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json($validator->errors()->toJson(), 400);
-        }
-        $userId = auth()->user()->id;
-
-        $user = User::where('id', $userId)->update(
-            ['password' => bcrypt($request->new_password)]
-        );
-
-        return response()->json([
-            'message' => 'User successfully changed password',
-            'user' => $user,
-        ], 201);
     }
 }

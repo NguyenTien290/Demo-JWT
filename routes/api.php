@@ -22,10 +22,10 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::group(['prefix' => 'auth'], function ($router) {
     Route::post('/login', [AuthCcontroller::class, 'login']);
     Route::post('/register', [AuthCcontroller::class, 'register']);
+    Route::post('/refresh', [AuthCcontroller::class, 'refresh']);
     Route::group(['middleware' => ['jwt']], function () {
         Route::get('/user-profile', [AuthCcontroller::class, 'userProfile']);
         Route::post('/logout', [AuthCcontroller::class, 'logout']);
-        Route::post('/refresh', [AuthCcontroller::class, 'refresh']);
         Route::post('/change-pass', [AuthCcontroller::class, 'changePassWord']);
     });
 });
